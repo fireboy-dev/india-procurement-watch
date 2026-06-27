@@ -24,6 +24,7 @@ This project was built to analyze data scraped by [Sarthak Sidhant's India Procu
   - Super fast awards (awarded within a day of bidding closing)
   - Massive state contracts over ₹100 Crore.
 - **Instant search:** Full-text search across ~5 million tender titles and orgs.
+- **Contract Network:** Link awarded contracts to the **MCA/ROC company registry** and explore the graph — search any company or government buyer to see who awards whom, consortium (co-bidder) ties, and firms that share a registered email/address. ([details](#-contract-network-vendor--buyer-graph))
 
 ---
 
@@ -74,6 +75,34 @@ Need tables:
 
 ---
 
+## 🕸️ Contract Network (vendor ⇄ buyer graph)
+
+Beyond aggregates, this tab maps the *relationships* behind the money. It links each
+award to the **MCA/ROC company registry** (the awards carry a company *name* but no
+registration number) and lets you explore the resulting graph:
+
+- **Search** any company or government buyer.
+- See its **ego-network**: contracts won, the buyers awarding them, **co-bidders**
+  (consortia), and companies that **share a registered email / address**.
+- **Click any node** to recenter on it; the side panel shows that company's registry
+  card (CIN, status, state, email, address, RoC).
+
+The graph is served from a small precomputed `network.db` — same precompute → tiny
+SQLite → serve pattern as `summary.db`. The heavy entity-resolution (matching ~445k
+bidder names to ~2M registry companies with Splink) lives in the companion
+**india-procurement-network** pipeline, which emits a `network.duckdb`. `build_network.py`
+packages that into `network.db`.
+
+**Enable it:**
+```bash
+pip install duckdb                              # build-time only (not needed to run the app)
+python build_network.py /path/to/network.duckdb # → network.db (~130 MB)
+python app.py
+```
+If `network.db` is absent, the tab shows a friendly "run build_network.py" note and the
+rest of the dashboard works exactly as before. Tip: `/?focus=<node_id>` deep-links
+straight to a node's network.
+
 ## How it works under the hood
 
 Loading 12GB of raw SQL data on every page load would be terrible. Instead, we do the heavy lifting once:
@@ -90,6 +119,7 @@ Result? Every chart loads instantly, no matter how big the source data gets.
 
 - **`create_sample_data.py`** — Spits out fake data for testing.
 - **`build_summary.py`** — The number cruncher. Run this when you get new data.
+- **`build_network.py`** — Builds the Contract Network graph DB (`network.db`) from the linkage pipeline's `network.duckdb`.
 - **`build_search_index.py`** — Builds the search engine.
 - **`optimize_fts.py`** — Makes the search engine faster.
 - **`app.py`** — The web server.
@@ -100,7 +130,7 @@ Result? Every chart loads instantly, no matter how big the source data gets.
 ## Built with
 
 - **Backend:** Python, Flask, SQLite (with FTS5 for search)
-- **Frontend:** Vanilla HTML/CSS/JS, Chart.js for graphs
+- **Frontend:** Vanilla HTML/CSS/JS, Chart.js for graphs, vis-network for the contract graph (both via CDN)
 - No Node.js, no crazy build steps, no bloat.
 
 ---

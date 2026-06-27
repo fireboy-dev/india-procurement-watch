@@ -10,6 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
@@ -308,6 +309,67 @@
     </div>
   </section>
 
+  <!-- ── CONTRACT NETWORK SECTION ── -->
+  <section class="section network-section" id="networkSection">
+    <div class="section-header">
+      <h2 class="section-title">
+        <span class="pulse-dot" style="background:var(--blue)"></span>
+        Contract Network Explorer
+      </h2>
+      <span class="net-stats" id="netStats"></span>
+    </div>
+    <div class="anomaly-desc net-desc">
+      Awards linked to the <strong>MCA/ROC company registry</strong>. Search a company or a
+      government buyer to map its network — contracts won, the buyers awarding them,
+      co-bidders (consortia), and firms that share a registered <strong>email</strong> or
+      <strong>address</strong>. Click any node to expand it.
+    </div>
+
+    <div class="net-notice" id="netNotice" style="display:none">
+      <strong>network.db not found.</strong> Run
+      <code>python build_network.py /path/to/network.duckdb</code> to enable this feature
+      (see the Contract Network section of the README).
+    </div>
+
+    <div class="net-explorer" id="netExplorer" style="display:none">
+      <div class="net-search-wrap">
+        <div class="search-bar-wrap">
+          <div class="search-icon"><i data-lucide="search"></i></div>
+          <input type="text" id="netSearchInput" class="search-input"
+                 placeholder="Search a company or buyer by name…" autocomplete="off" />
+          <div class="search-filters">
+            <select id="netTypeFilter" class="filter-select">
+              <option value="">All nodes</option>
+              <option value="company">Companies</option>
+              <option value="buyer">Buyers</option>
+            </select>
+          </div>
+        </div>
+        <div class="net-suggest" id="netSuggest" style="display:none"></div>
+      </div>
+
+      <div class="net-grid">
+        <div class="net-graph-card">
+          <div class="net-legend">
+            <span><i class="net-dot" style="background:var(--blue)"></i>Company</span>
+            <span><i class="net-dot" style="background:var(--violet)"></i>Buyer</span>
+            <span><i class="net-edge" style="background:#6b7280"></i>Awarded</span>
+            <span><i class="net-edge" style="background:var(--violet)"></i>Co-bidder</span>
+            <span><i class="net-edge" style="background:var(--red)"></i>Shared email</span>
+            <span><i class="net-edge" style="background:var(--amber)"></i>Shared address</span>
+          </div>
+          <div id="netGraph"></div>
+          <div class="net-empty" id="netEmpty">
+            🔎 Search above and pick a company or buyer to render its network.
+          </div>
+        </div>
+        <aside class="net-panel" id="netPanel">
+          <div class="net-panel-empty">Select a node to see its registry details.</div>
+        </aside>
+      </div>
+    </div>
+  </section>
+
   <!-- TENDER DETAIL MODAL -->
   <div class="modal-backdrop" id="modalBackdrop" style="display:none" onclick="closeModal()"></div>
   <div class="modal" id="tenderModal" style="display:none">
@@ -326,6 +388,7 @@
 
 <script src="js/charts.js"></script>
 <script src="js/search.js"></script>
+<script src="js/network.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

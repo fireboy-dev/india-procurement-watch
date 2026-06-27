@@ -1,2 +1,6 @@
 flask>=3.0.0
 flask-cors>=4.0.0
+
+# Contract Network feature — needed ONLY to (re)build network.db via build_network.py.
+# The dashboard itself runs on flask alone. (vis-network is loaded from a CDN, no pip.)
+duckdb>=1.1.0

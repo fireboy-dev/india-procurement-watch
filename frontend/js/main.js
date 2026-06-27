@@ -248,6 +248,9 @@ async function initDashboard() {
 
     showDashboard();
 
+    // Contract Network feature (independent of summary data)
+    if (typeof initNetwork === 'function') initNetwork();
+
   } catch(e) {
     console.error('Dashboard init error:', e);
     document.getElementById('loadingOverlay').innerHTML = `

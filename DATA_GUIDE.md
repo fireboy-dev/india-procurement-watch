@@ -90,6 +90,20 @@ This takes another **2–3 minutes**.
 
 ---
 
+## 6½. (Optional) Enable the Contract Network
+
+The **Contract Network** tab maps awards to the MCA/ROC company registry. Its data comes
+from the companion **india-procurement-network** pipeline (Splink-based name → registry
+linkage), which produces a `network.duckdb`. Package it for the dashboard:
+
+```bash
+pip install duckdb        # build-time only
+python build_network.py /path/to/network.duckdb     # → network.db (~130 MB)
+```
+
+If you skip this, the tab just shows a "run build_network.py" note and everything else
+works normally.
+
 ## 7. Fire it up
 
 That's it. The heavy lifting is done. Start the web server:

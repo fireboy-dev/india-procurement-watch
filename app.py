@@ -21,6 +21,7 @@ SUM_DB    = os.path.join(BASE_DIR, "summary.db")
 AOC_DB    = os.path.join(BASE_DIR, "aoc_tenders.db")
 VPS_DB    = os.path.join(BASE_DIR, "tenders_vps.db")
 SEARCH_DB = os.path.join(BASE_DIR, "search.db")
+NET_DB    = os.path.join(BASE_DIR, "network.db")   # Contract Network feature (build_network.py)
 STATIC_DIR= os.path.join(BASE_DIR, "frontend")
 
 app = Flask(__name__, static_folder=STATIC_DIR, static_url_path="")
@@ -57,6 +58,9 @@ def get_aoc_conn():
 
 def get_search_conn():
     return _get_conn('search', SEARCH_DB, read_only=True)
+
+def get_net_conn():
+    return _get_conn('net', NET_DB, read_only=True)
 
 def rows_to_list(cursor_result):
     return [dict(row) for row in cursor_result]
@@ -542,9 +546,122 @@ def api_status():
     return jsonify({
         "summary_db_ready": summary_ready,
         "search_db_ready":  search_ready,
+        "network_db_ready": os.path.exists(NET_DB),
         "aoc_db_exists":    os.path.exists(AOC_DB),
         "vps_db_exists":    os.path.exists(VPS_DB),
     })
+
+
+# ─────────────────────────────────────────────
+# API: CONTRACT NETWORK  (companies ⇄ buyers graph from network.db)
+# Built by build_network.py from the linkage pipeline's network.duckdb.
+# ─────────────────────────────────────────────
+
+# vis colours per edge type (kept in sync with frontend/js/network.js)
+_NET_FIELDS = ("node_id", "ntype", "label", "state", "cin", "status", "email",
+               "address", "roc", "activity", "n_contracts", "n_partners",
+               "total_value_cr", "degree")
+
+def _node_dict(row, focus=False):
+    d = {k: row[k] for k in _NET_FIELDS}
+    d["focus"] = focus
+    return d
+
+@app.route("/api/network/stats")
+def api_network_stats():
+    if not os.path.exists(NET_DB):
+        return jsonify({"ready": False})
+    conn = get_net_conn()
+    meta = {r["key"]: int(r["value"]) for r in conn.execute("SELECT key, value FROM net_meta")}
+    meta["ready"] = True
+    return jsonify(meta)
+
+@app.route("/api/network/search")
+def api_network_search():
+    if not os.path.exists(NET_DB):
+        return jsonify({"ready": False, "results": []})
+    q     = request.args.get("q", "").strip()
+    ntype = request.args.get("type", "").strip()   # company | buyer | ''
+    if len(q) < 2:
+        return jsonify({"results": []})
+
+    conn = get_net_conn()
+    cur  = conn.cursor()
+    type_sql, type_params = ("", [])
+    if ntype in ("company", "buyer"):
+        type_sql, type_params = (" AND n.ntype = ?", [ntype])
+
+    # FTS5 fast path
+    fts_q = _sanitize_fts(q)
+    if fts_q:
+        try:
+            cur.execute(f"""
+                SELECT n.node_id, n.label, n.ntype, n.state,
+                       n.n_contracts, n.total_value_cr, n.degree
+                FROM net_search s
+                JOIN net_nodes n ON n.node_id = s.node_id
+                WHERE net_search MATCH ?{type_sql}
+                ORDER BY n.degree DESC
+                LIMIT 25
+            """, [fts_q] + type_params)
+            rows = [dict(r) for r in cur.fetchall()]
+            if rows:
+                return jsonify({"results": rows})
+        except sqlite3.OperationalError:
+            pass  # FTS table absent → fall through to LIKE
+
+    # LIKE fallback
+    cur.execute(f"""
+        SELECT node_id, label, ntype, state, n_contracts, total_value_cr, degree
+        FROM net_nodes n
+        WHERE n.label LIKE ?{type_sql}
+        ORDER BY n.degree DESC
+        LIMIT 25
+    """, [f"%{q}%"] + type_params)
+    return jsonify({"results": [dict(r) for r in cur.fetchall()]})
+
+@app.route("/api/network/ego")
+def api_network_ego():
+    if not os.path.exists(NET_DB):
+        abort(503)
+    node_id = request.args.get("id", "").strip()
+    limit   = min(int(request.args.get("limit", 60)), 250)
+    if not node_id:
+        return jsonify({"focus": None, "nodes": [], "edges": []})
+
+    conn = get_net_conn()
+    cur  = conn.cursor()
+    focus_row = cur.execute("SELECT * FROM net_nodes WHERE node_id = ?", (node_id,)).fetchone()
+    if not focus_row:
+        abort(404)
+
+    # strongest edges touching the focus node, either direction
+    cur.execute("""
+        SELECT src, dst, etype, weight, total_value_cr, label
+        FROM net_edges
+        WHERE src = ? OR dst = ?
+        ORDER BY weight DESC
+        LIMIT ?
+    """, (node_id, node_id, limit))
+    edge_rows = cur.fetchall()
+
+    neighbours, edges = set(), []
+    for e in edge_rows:
+        other = e["dst"] if e["src"] == node_id else e["src"]
+        neighbours.add(other)
+        edges.append({"src": e["src"], "dst": e["dst"], "etype": e["etype"],
+                      "weight": e["weight"], "total_value_cr": e["total_value_cr"],
+                      "label": e["label"]})
+
+    ids = list(neighbours) + [node_id]
+    qmarks = ",".join("?" * len(ids))
+    node_rows = cur.execute(
+        f"SELECT * FROM net_nodes WHERE node_id IN ({qmarks})", ids
+    ).fetchall()
+    nodes = [_node_dict(r, focus=(r["node_id"] == node_id)) for r in node_rows]
+
+    return jsonify({"focus": node_id, "nodes": nodes, "edges": edges,
+                    "truncated": len(edge_rows) >= limit})
 
 
 # ─────────────────────────────────────────────
