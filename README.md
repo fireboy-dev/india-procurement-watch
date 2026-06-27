@@ -135,6 +135,22 @@ Result? Every chart loads instantly, no matter how big the source data gets.
 
 ---
 
+## Deploy it (free)
+
+Cloudflare's free hosting is serverless and can't run Flask + multi-GB SQLite directly,
+so the simplest free deploy is a **Cloudflare Tunnel** — one command gives a public URL
+serving the whole app (charts, search, Contract Network, Sector map), no rewrite:
+
+```bash
+pip install -r requirements.txt          # includes gunicorn
+brew install cloudflared                 # or the Linux build
+bash deploy/cloudflare/run-tunnel.sh     # → https://<random>.trycloudflare.com
+```
+
+Named tunnels (stable custom domain), a `Dockerfile` for free container hosts, and a
+fully-serverless **Pages + Workers + D1** sketch are in
+[`deploy/cloudflare/`](deploy/cloudflare/README.md).
+
 ## Want to contribute?
 
 Feel free to open a PR! Just please keep it dependency-light. The goal is to keep this thing easy to run for anyone without a complex setup.

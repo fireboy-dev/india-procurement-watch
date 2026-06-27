@@ -1,0 +1,19 @@
+# Named Cloudflare Tunnel — stable custom domain (free, but needs a free
+# Cloudflare account + a domain added to Cloudflare). Unlike the quick tunnel,
+# the URL doesn't change between runs.
+#
+# Setup (one-time):
+#   cloudflared login
+#   cloudflared tunnel create ipw
+#   cloudflared tunnel route dns ipw procurement.<your-domain>
+#   # put this file at ~/.cloudflared/config.yml (fill in the UUID), then:
+#   cloudflared tunnel run ipw          # with the app running on :5055
+#
+tunnel: <YOUR_TUNNEL_UUID>
+credentials-file: /home/youruser/.cloudflared/<YOUR_TUNNEL_UUID>.json
+
+ingress:
+  - hostname: procurement.example.com
+    service: http://127.0.0.1:5055
+  # everything else → 404
+  - service: http_status:404
