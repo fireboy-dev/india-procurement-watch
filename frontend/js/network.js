@@ -49,11 +49,39 @@ async function initNetwork() {
     if (!e.target.closest('.net-search-wrap')) hideSuggest();
   });
 
+  // sector picker
+  await populateSectors();
+  document.getElementById('netSectorSelect').addEventListener('change', (e) => {
+    if (e.target.value) loadSector(e.target.value);
+  });
+
   if (window.lucide) lucide.createIcons();
 
-  // deep link: /?focus=<node_id> auto-renders that node's network
-  const focus = new URLSearchParams(location.search).get('focus');
-  if (focus) loadEgo(focus);
+  // deep links: /?focus=<node_id> or /?sector=<name>
+  const qp = new URLSearchParams(location.search);
+  if (qp.get('sector')) loadSector(qp.get('sector'));
+  else if (qp.get('focus')) loadEgo(qp.get('focus'));
+}
+
+// ── SECTORS ──
+async function populateSectors() {
+  let data;
+  try { data = await fetch('/api/network/sectors').then(r => r.json()); }
+  catch (e) { return; }
+  const sel = document.getElementById('netSectorSelect');
+  (data.sectors || []).forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s.category;
+    opt.textContent = `${s.category}  (${fmtNum(s.n_awards)} awards)`;
+    sel.appendChild(opt);
+  });
+}
+
+function setMode(sectorName) {
+  const tag = document.getElementById('netModeTag');
+  const sel = document.getElementById('netSectorSelect');
+  if (sectorName) { tag.textContent = `Sector map: ${sectorName}`; sel.value = sectorName; }
+  else { tag.textContent = ''; sel.value = ''; }
 }
 
 // ── SEARCH ──
@@ -108,24 +136,37 @@ function netSelect(encId) {
   loadEgo(id);
 }
 
-async function loadEgo(nodeId) {
+async function fetchGraph(url) {
   const empty = document.getElementById('netEmpty');
   empty.textContent = 'Loading network…';
   empty.style.display = 'flex';
-
   let data;
-  try {
-    data = await fetch(`/api/network/ego?id=${encodeURIComponent(nodeId)}&limit=60`).then(r => r.json());
-  } catch (e) {
-    empty.textContent = '⚠️ Could not load network.';
-    return;
-  }
+  try { data = await fetch(url).then(r => r.json()); }
+  catch (e) { empty.textContent = '⚠️ Could not load network.'; return null; }
   if (!data.nodes || !data.nodes.length) {
-    empty.textContent = 'No connections found for this node.';
-    return;
+    empty.textContent = 'No connections found.'; return null;
   }
   empty.style.display = 'none';
+  return data;
+}
 
+async function loadEgo(nodeId) {
+  const data = await fetchGraph(`/api/network/ego?id=${encodeURIComponent(nodeId)}&limit=60`);
+  if (!data) return;
+  drawGraph(data);
+  setMode('');                                   // node-centric mode
+  renderPanel(data.nodes.find(n => n.focus) || data.nodes[0]);
+}
+
+async function loadSector(name) {
+  const data = await fetchGraph(`/api/network/sector?name=${encodeURIComponent(name)}&limit=90`);
+  if (!data) return;
+  drawGraph(data);
+  setMode(name);
+  renderSectorPanel(data.meta || { category: name });
+}
+
+function drawGraph(data) {
   // build vis datasets
   netNodeMeta = {};
   const visNodes = data.nodes.map(n => {
@@ -189,10 +230,6 @@ async function loadEgo(nodeId) {
   // re-enable physics for the new layout, then freeze again
   netVis.setOptions({ physics: { enabled: true } });
   netVis.once('stabilizationIterationsDone', () => netVis.setOptions({ physics: false }));
-
-  // focus node details into the panel
-  const focus = data.nodes.find(n => n.focus) || data.nodes[0];
-  renderPanel(focus);
 }
 
 // ── TOOLTIP ──
@@ -243,6 +280,27 @@ function renderPanel(n) {
     </div>
     ${fields.join('')}
     <div class="net-hint">Click any node in the graph to recenter on it.</div>
+  `;
+}
+
+// ── SECTOR PANEL ──
+function renderSectorPanel(m) {
+  const panel = document.getElementById('netPanel');
+  const metrics = [
+    ['Awards', fmtNum(m.n_awards)],
+    ['Value', '₹' + fmtNum(m.total_value_cr) + ' Cr'],
+    ['Companies', fmtNum(m.n_companies)],
+    ['Buyers', fmtNum(m.n_buyers)],
+  ];
+  panel.innerHTML = `
+    <div class="net-panel-title"><span class="net-type-tag net-type-buyer">Sector</span>${escapeHtml(m.category)}</div>
+    <div class="net-panel-sub">Sector map · top vendor ⇄ buyer relations</div>
+    <div class="net-metric-row">
+      ${metrics.map(x => `<div class="net-metric"><div class="net-metric-val">${x[1]}</div><div class="net-metric-lbl">${x[0]}</div></div>`).join('')}
+    </div>
+    <div class="net-field"><div class="net-field-key">Reading the map</div>
+      <div class="net-field-val">Blue = companies, violet = government buyers. Edge thickness ≈ number of contracts in this sector.</div></div>
+    <div class="net-hint">Click any company to drill into its full network.</div>
   `;
 }
 

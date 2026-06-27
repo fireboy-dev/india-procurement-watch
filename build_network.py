@@ -151,6 +151,51 @@ def main() -> int:
     sq.executemany("INSERT INTO net_edges VALUES (?,?,?,?,?,?)", edges)
     print(f"    edges: {len(edges):,}")
 
+    # ── sector map (category → top company⇄buyer relations) ──
+    print("  loading sectors …")
+    sq.executescript("""
+        CREATE TABLE net_sectors (
+            category TEXT PRIMARY KEY,
+            n_awards INTEGER, n_companies INTEGER, n_buyers INTEGER, total_value_cr REAL
+        );
+        CREATE TABLE net_sector_edges (
+            category TEXT, company_id TEXT, buyer_id TEXT,
+            n_contracts INTEGER, total_value_cr REAL
+        );
+    """)
+    sectors = duck.execute("""
+        SELECT category, COUNT(*), COUNT(DISTINCT cin), COUNT(DISTINCT buyer_key),
+               SUM(contract_value_ok)
+        FROM awards_enriched
+        WHERE category IS NOT NULL AND cin IS NOT NULL AND buyer_key IS NOT NULL
+        GROUP BY 1 ORDER BY 2 DESC
+    """).fetchall()
+    sectors = [(r[0], int(r[1] or 0), int(r[2] or 0), int(r[3] or 0),
+                round((r[4] or 0) / RUPEES_PER_CRORE, 2)) for r in sectors]
+    sq.executemany("INSERT INTO net_sectors VALUES (?,?,?,?,?)", sectors)
+
+    # top 120 company⇄buyer edges per sector (by contract count)
+    sector_edges = duck.execute("""
+        WITH agg AS (
+            SELECT category, cin, buyer_key,
+                   COUNT(*) AS n, SUM(contract_value_ok) AS val
+            FROM awards_enriched
+            WHERE category IS NOT NULL AND cin IS NOT NULL AND buyer_key IS NOT NULL
+            GROUP BY 1, 2, 3
+        ),
+        ranked AS (
+            SELECT *, ROW_NUMBER() OVER (PARTITION BY category ORDER BY n DESC, val DESC) AS rn
+            FROM agg
+        )
+        SELECT category, 'C:' || cin, 'B:' || buyer_key, n, val
+        FROM ranked WHERE rn <= 120
+    """).fetchall()
+    sector_edges = [(r[0], r[1], r[2], int(r[3] or 0), round((r[4] or 0) / RUPEES_PER_CRORE, 2))
+                    for r in sector_edges]
+    sq.executemany("INSERT INTO net_sector_edges VALUES (?,?,?,?,?)", sector_edges)
+    sq.execute("CREATE INDEX ix_sector_edge ON net_sector_edges(category, n_contracts DESC)")
+    print(f"    sectors: {len(sectors)} · sector edges: {len(sector_edges):,}")
+
     # ── indexes + search ──
     print("  indexing …")
     sq.executescript("""
@@ -182,6 +227,7 @@ def main() -> int:
         "edges_cobidder": one("SELECT COUNT(*) FROM net_edges WHERE etype='CO_BIDDER'"),
         "edges_shared_email": one("SELECT COUNT(*) FROM net_edges WHERE etype='SHARES_EMAIL'"),
         "edges_shared_address": one("SELECT COUNT(*) FROM net_edges WHERE etype='SHARES_ADDRESS'"),
+        "sectors": one("SELECT COUNT(*) FROM net_sectors"),
     }
     sq.executemany("INSERT OR REPLACE INTO net_meta VALUES (?,?)",
                    [(k, str(v)) for k, v in meta.items()])

@@ -663,6 +663,57 @@ def api_network_ego():
     return jsonify({"focus": node_id, "nodes": nodes, "edges": edges,
                     "truncated": len(edge_rows) >= limit})
 
+@app.route("/api/network/sectors")
+def api_network_sectors():
+    if not os.path.exists(NET_DB):
+        return jsonify({"ready": False, "sectors": []})
+    conn = get_net_conn()
+    rows = conn.execute("""
+        SELECT category, n_awards, n_companies, n_buyers, total_value_cr
+        FROM net_sectors ORDER BY n_awards DESC
+    """).fetchall()
+    return jsonify({"ready": True, "sectors": [dict(r) for r in rows]})
+
+@app.route("/api/network/sector")
+def api_network_sector():
+    if not os.path.exists(NET_DB):
+        abort(503)
+    name  = request.args.get("name", "").strip()
+    limit = min(int(request.args.get("limit", 90)), 250)
+    if not name:
+        return jsonify({"sector": None, "nodes": [], "edges": []})
+
+    conn = get_net_conn()
+    cur  = conn.cursor()
+    meta_row = cur.execute("SELECT * FROM net_sectors WHERE category = ?", (name,)).fetchone()
+    if not meta_row:
+        abort(404)
+
+    cur.execute("""
+        SELECT company_id, buyer_id, n_contracts, total_value_cr
+        FROM net_sector_edges
+        WHERE category = ?
+        ORDER BY n_contracts DESC
+        LIMIT ?
+    """, (name, limit))
+    erows = cur.fetchall()
+
+    ids, edges = set(), []
+    for e in erows:
+        ids.add(e["company_id"]); ids.add(e["buyer_id"])
+        edges.append({"src": e["buyer_id"], "dst": e["company_id"], "etype": "AWARDED",
+                      "weight": e["n_contracts"], "total_value_cr": e["total_value_cr"],
+                      "label": f"{e['n_contracts']} contracts"})
+
+    nodes = []
+    if ids:
+        qmarks = ",".join("?" * len(ids))
+        for r in cur.execute(f"SELECT * FROM net_nodes WHERE node_id IN ({qmarks})", list(ids)):
+            nodes.append(_node_dict(r, focus=False))
+
+    return jsonify({"sector": name, "meta": dict(meta_row),
+                    "nodes": nodes, "edges": edges})
+
 
 # ─────────────────────────────────────────────
 # MAIN
