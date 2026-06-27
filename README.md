@@ -144,7 +144,11 @@ serving the whole app (charts, search, Contract Network, Sector map), no rewrite
 ```bash
 pip install -r requirements.txt          # includes gunicorn
 brew install cloudflared                 # or the Linux build
-bash deploy/cloudflare/run-tunnel.sh     # → https://<random>.trycloudflare.com
+python build_summary.py                  # build chart data (once)
+python build_network.py /path/to/network.duckdb   # Contract Network + Sector map (once)
+
+bash deploy/cloudflare/run-tunnel.sh     # → prints https://<random>.trycloudflare.com
+# stop: Ctrl-C  (kills the tunnel and the app)
 ```
 
 Named tunnels (stable custom domain), a `Dockerfile` for free container hosts, and a

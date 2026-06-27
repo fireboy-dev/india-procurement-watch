@@ -29,12 +29,42 @@ python build_network.py /path/to/network.duckdb   # Contract Network + Sector ma
 bash deploy/cloudflare/run-tunnel.sh
 ```
 
-You'll get a public `https://<random>.trycloudflare.com` URL. The script runs the app
-with `gunicorn` and opens the tunnel; Ctrl-C stops both. Override the port with
-`PORT=8080 bash deploy/cloudflare/run-tunnel.sh`.
+`cloudflared` prints your public URL in a box, e.g.:
 
-> Quick-tunnel URLs are **ephemeral** (new URL each run) and meant for sharing/testing.
-> For a stable URL, use a named tunnel ↓.
+```
++----------------------------------------------------------+
+|  Your quick Tunnel has been created! Visit it at:        |
+|  https://shareware-provisions-biz-bluetooth.trycloudflare.com  |
++----------------------------------------------------------+
+```
+
+Override the port with `PORT=8080 bash deploy/cloudflare/run-tunnel.sh`.
+
+**Stop it:** press `Ctrl-C` in that terminal — the script traps it and kills both the
+tunnel and the app. If you started things in the background, stop them with:
+
+```bash
+pkill -f "cloudflared tunnel --url"      # stop the tunnel
+lsof -ti:5055 | xargs kill               # stop the app (use your port)
+```
+
+### Manual alternative (two terminals, no script)
+
+```bash
+# terminal 1 — run the app
+gunicorn -w 2 --threads 8 -b 127.0.0.1:5055 app:app
+#   (or, for a quick local run: python app.py   → serves on :5000)
+
+# terminal 2 — expose it through Cloudflare (free)
+cloudflared tunnel --url http://127.0.0.1:5055
+#   → prints  https://<random>.trycloudflare.com
+```
+
+Verify it's live: `curl -s https://<random>.trycloudflare.com/api/status`.
+
+> Quick-tunnel URLs are **ephemeral** (new URL each run) and require this machine to stay
+> running. For a **stable** URL use a named tunnel ↓; to run it always-on, put the
+> `Dockerfile` on a free host and point a named tunnel at it.
 
 ### Named tunnel — stable custom domain (free account + a domain on Cloudflare)
 
