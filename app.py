@@ -36,8 +36,19 @@ CORS(app)
 _tl = threading.local()
 
 def _get_conn(attr, path, read_only=False):
-    """Return a thread-local SQLite connection, opening it once per thread."""
+    """Return a thread-local SQLite connection, opening it once per thread.
+
+    Some endpoints call conn.close() after use. Under a reusing worker-thread pool
+    (e.g. gunicorn) that would leave a *closed* connection cached for the next
+    request on the same thread, raising "Cannot operate on a closed database". So
+    we verify the cached connection is still usable and transparently reopen it.
+    """
     conn = getattr(_tl, attr, None)
+    if conn is not None:
+        try:
+            conn.execute("SELECT 1")
+        except sqlite3.Error:
+            conn = None          # was closed/broken → reopen below
     if conn is None:
         if read_only:
             uri = f"file:{path}?mode=ro"
